@@ -928,6 +928,338 @@ Derived Roles:     ZDM:<Module>:<Role_Name>:<Entity_Code> (Maintain)
 
 ---
 
+## Identity Confidence Percentage & Predictive Access
+
+### Overview
+
+The Identity Confidence Percentage is a calculated score that determines how likely a user should have a specific role or access based on their identity attributes, organizational context, and peer analysis. This enables predictive access recommendations and anomaly detection.
+
+### Confidence Score Calculation
+
+The confidence score is calculated using multiple weighted criteria:
+
+```
+Identity Confidence % = Σ (Criterion Weight × Criterion Score) / Total Weight × 100
+```
+
+### Scoring Criteria & Weights
+
+| Criterion | Weight | Description | Score Range |
+|-----------|--------|-------------|-------------|
+| **Function Match** | 30% | User's function matches role's intended function | 0-100 |
+| **Country/Entity Match** | 20% | User's country matches role's country derivation | 0-100 |
+| **Org Level Match** | 15% | User's org level (L1-L4) matches role's typical level | 0-100 |
+| **Department Match** | 10% | User's department aligns with role's module | 0-100 |
+| **Peer Analysis** | 15% | % of peers with same function/level who have this role | 0-100 |
+| **Historical Usage** | 10% | User's actual usage of transactions in the role | 0-100 |
+
+### Confidence Score Interpretation
+
+| Score Range | Interpretation | Action |
+|-------------|----------------|--------|
+| **90-100%** | High Confidence | Auto-approve role assignment |
+| **70-89%** | Medium Confidence | Standard approval workflow |
+| **50-69%** | Low Confidence | Enhanced review required |
+| **Below 50%** | Anomaly | Flag for investigation |
+
+### Cypher Query: Calculate Identity Confidence
+
+```cypher
+// ═══════════════════════════════════════════════════════════════════════════
+// IDENTITY CONFIDENCE SCORE CALCULATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Calculate confidence score for a user-role combination
+WITH $userId AS userId, $roleId AS roleId
+
+// Get user attributes
+MATCH (u:User {userId: userId})
+MATCH (br:BusinessRole {roleId: roleId})
+
+// Function Match Score (30%)
+WITH u, br,
+     CASE WHEN br.module CONTAINS u.function OR u.function CONTAINS br.module 
+          THEN 100 ELSE 0 END AS functionScore
+
+// Country Match Score (20%)
+OPTIONAL MATCH (br)-[:VALID_FOR_COUNTRY]->(c:Country)
+WITH u, br, functionScore,
+     CASE WHEN u.countryCode = c.isoCode THEN 100
+          WHEN c IS NULL THEN 50  // Master role, partial match
+          ELSE 0 END AS countryScore
+
+// Org Level Match Score (15%)
+WITH u, br, functionScore, countryScore,
+     CASE 
+       WHEN br.module = 'FIN' AND u.level IN ['L2'] THEN 100
+       WHEN br.module = 'P2P' AND u.level IN ['L4'] THEN 100
+       WHEN br.module = 'S&D' AND u.level IN ['L4'] THEN 100
+       WHEN br.module = 'DFE' AND u.level IN ['L3'] THEN 100
+       ELSE 50 
+     END AS levelScore
+
+// Peer Analysis Score (15%)
+OPTIONAL MATCH (peer:User)-[:HAS_BUSINESS_ROLE]->(br)
+WHERE peer.function = u.function AND peer.level = u.level AND peer.userId <> u.userId
+WITH u, br, functionScore, countryScore, levelScore,
+     CASE WHEN count(peer) > 0 THEN 100 ELSE 30 END AS peerScore
+
+// Calculate Final Confidence Score
+WITH u, br,
+     (functionScore * 0.30 + 
+      countryScore * 0.20 + 
+      levelScore * 0.15 + 
+      peerScore * 0.15 + 
+      50 * 0.10 +  // Department match (default 50)
+      50 * 0.10    // Historical usage (default 50)
+     ) AS confidenceScore
+
+RETURN u.userId AS User,
+       u.firstName + ' ' + u.lastName AS Name,
+       u.function AS Function,
+       u.level AS Level,
+       u.country AS Country,
+       br.roleId AS RoleId,
+       br.name AS RoleName,
+       round(confidenceScore, 2) AS ConfidencePercentage,
+       CASE 
+         WHEN confidenceScore >= 90 THEN 'HIGH - Auto Approve'
+         WHEN confidenceScore >= 70 THEN 'MEDIUM - Standard Approval'
+         WHEN confidenceScore >= 50 THEN 'LOW - Enhanced Review'
+         ELSE 'ANOMALY - Investigation Required'
+       END AS Recommendation
+```
+
+### Predictive Role Recommendations
+
+```cypher
+// ═══════════════════════════════════════════════════════════════════════════
+// RECOMMEND ROLES FOR A USER BASED ON IDENTITY ATTRIBUTES
+// ═══════════════════════════════════════════════════════════════════════════
+
+MATCH (u:User {userId: $userId})
+MATCH (br:BusinessRole)
+WHERE br.status = 'ACTIVE'
+
+// Calculate match scores
+OPTIONAL MATCH (br)-[:VALID_FOR_COUNTRY]->(c:Country {isoCode: u.countryCode})
+WITH u, br, c,
+     CASE WHEN br.module CONTAINS u.function THEN 30 ELSE 0 END AS funcScore,
+     CASE WHEN c IS NOT NULL THEN 20 ELSE 0 END AS countryScore
+
+// Check peer assignments
+OPTIONAL MATCH (peer:User)-[:HAS_BUSINESS_ROLE]->(br)
+WHERE peer.function = u.function 
+  AND peer.level = u.level 
+  AND peer.countryCode = u.countryCode
+  AND peer.userId <> u.userId
+WITH u, br, funcScore, countryScore, count(peer) AS peerCount
+
+// Calculate recommendation score
+WITH u, br, 
+     funcScore + countryScore + 
+     CASE WHEN peerCount > 5 THEN 25 
+          WHEN peerCount > 0 THEN 15 
+          ELSE 0 END AS totalScore,
+     peerCount
+
+WHERE totalScore > 40
+  AND NOT EXISTS { MATCH (u)-[:HAS_BUSINESS_ROLE]->(br) }
+
+RETURN br.roleId AS RecommendedRole,
+       br.name AS RoleName,
+       br.module AS Module,
+       totalScore AS MatchScore,
+       peerCount AS PeersWithRole,
+       'Based on function, country, and peer analysis' AS Reason
+ORDER BY totalScore DESC
+LIMIT 5
+```
+
+---
+
+## SAP Data Points Required
+
+### Overview
+
+The following SAP tables and data points are required to build the knowledge graph and enable SOD detection, identity confidence scoring, and access analytics.
+
+### SAP Tables & Data Extraction
+
+#### 1. User Master Data
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **USR02** | User Logon Data | BNAME, USTYP, CLASS, GLTGV, GLTGB | User status, validity dates |
+| **USR21** | User Address Keys | BNAME, PERSNUMBER, ADDRNUMBER | Link to address/HR data |
+| **ADRP** | Person Address | PERSNUMBER, NAME_FIRST, NAME_LAST | User names |
+| **USR06** | Additional User Data | BNAME, LIC_TYPE | License type |
+
+**Extraction Query (SE16/SQL):**
+```sql
+SELECT u.BNAME, u.USTYP, u.CLASS, u.GLTGV, u.GLTGB,
+       a.NAME_FIRST, a.NAME_LAST
+FROM USR02 u
+JOIN USR21 u21 ON u.BNAME = u21.BNAME
+JOIN ADRP a ON u21.PERSNUMBER = a.PERSNUMBER
+WHERE u.USTYP = 'A'  -- Dialog users
+  AND u.GLTGB >= CURRENT_DATE
+```
+
+#### 2. Role Definitions
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **AGR_DEFINE** | Role Definition | AGR_NAME, PARENT_AGR | Role names, composite structure |
+| **AGR_1251** | Role Authorization Data | AGR_NAME, OBJECT, AUTH, FIELD, LOW, HIGH | Auth object values |
+| **AGR_TEXTS** | Role Descriptions | AGR_NAME, TEXT | Role descriptions |
+| **AGR_AGRS** | Composite Role Contents | AGR_NAME, CHILD_AGR | Child roles in composite |
+
+**Extraction Query:**
+```sql
+SELECT d.AGR_NAME, d.PARENT_AGR, t.TEXT,
+       a.OBJECT, a.AUTH, a.FIELD, a.LOW, a.HIGH
+FROM AGR_DEFINE d
+LEFT JOIN AGR_TEXTS t ON d.AGR_NAME = t.AGR_NAME AND t.SPRAS = 'E'
+LEFT JOIN AGR_1251 a ON d.AGR_NAME = a.AGR_NAME
+WHERE d.AGR_NAME LIKE 'Z%'  -- Custom roles
+```
+
+#### 3. User-Role Assignments
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **AGR_USERS** | User Role Assignments | AGR_NAME, UNAME, FROM_DAT, TO_DAT | Active assignments |
+| **AGR_PROF** | Role Profiles | AGR_NAME, PROFILE | Generated profiles |
+
+**Extraction Query:**
+```sql
+SELECT AGR_NAME, UNAME, FROM_DAT, TO_DAT, 
+       CHANGE_DAT, CHANGE_TIM, CHANGE_USR
+FROM AGR_USERS
+WHERE TO_DAT >= CURRENT_DATE
+  AND AGR_NAME LIKE 'Z%'
+ORDER BY UNAME, AGR_NAME
+```
+
+#### 4. Transaction Codes
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **TSTC** | Transaction Codes | TCODE, PGMNA, DESSION | Transaction definitions |
+| **TSTCT** | Transaction Texts | TCODE, TTEXT | Transaction descriptions |
+| **USOBT** | Transaction-Auth Object Relation | NAME, OBJECT, FIELD | Required auth objects |
+| **USOBX** | Check Indicator | NAME, OBJECT | Active checks |
+
+**Extraction Query:**
+```sql
+SELECT t.TCODE, tt.TTEXT, t.PGMNA,
+       u.OBJECT, u.FIELD
+FROM TSTC t
+JOIN TSTCT tt ON t.TCODE = tt.TCODE AND tt.SPRSL = 'E'
+LEFT JOIN USOBT u ON t.TCODE = u.NAME
+WHERE t.TCODE IN ('ME21N','ME28','MIGO','MIRO','VA01','VA02','VA03')
+```
+
+#### 5. Authorization Objects
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **TOBJ** | Authorization Objects | OBJCT, FIEL1-FIEL10 | Object definitions |
+| **TOBJT** | Object Texts | OBJCT, TTEXT | Object descriptions |
+| **TACTZ** | Activity Values | ACTVT, ACTXT | Activity descriptions |
+
+**Extraction Query:**
+```sql
+SELECT o.OBJCT, ot.TTEXT, o.FIEL1, o.FIEL2, o.FIEL3
+FROM TOBJ o
+JOIN TOBJT ot ON o.OBJCT = ot.OBJCT AND ot.LANGU = 'E'
+WHERE o.OBJCT LIKE 'M_%' OR o.OBJCT LIKE 'F_%'
+```
+
+#### 6. Usage/Activity Logs (Optional - for Historical Analysis)
+
+| Table | Description | Key Fields | Usage |
+|-------|-------------|------------|-------|
+| **STAD** | Statistical Records | TCODE, ACCOUNT, STARTDATE | Transaction usage |
+| **SM21** | System Log | USER, TCODE, DATE, TIME | User activity |
+| **CDHDR/CDPOS** | Change Documents | OBJECTCLAS, OBJECTID, CHANGENR | Change history |
+
+### Data Extraction Methods
+
+#### Method 1: RFC/BAPI (Recommended for Real-time)
+
+```python
+# Python example using pyrfc
+from pyrfc import Connection
+
+conn = Connection(
+    ashost='sap-server.company.com',
+    sysnr='00',
+    client='100',
+    user='RFC_USER',
+    passwd='password'
+)
+
+# Read user-role assignments
+result = conn.call('BAPI_USER_GET_DETAIL', USERNAME='JSMITH')
+roles = result['ACTIVITYGROUPS']
+```
+
+#### Method 2: OData Services (SAP Gateway)
+
+```
+# OData endpoints to configure in SAP Gateway
+/sap/opu/odata/sap/API_USER_ROLE_ASSIGNMENT_SRV/
+/sap/opu/odata/sap/API_BUSINESS_ROLE_SRV/
+```
+
+#### Method 3: Direct Table Extraction (Batch)
+
+```sql
+-- Export to CSV for batch loading
+SELECT * FROM AGR_USERS INTO OUTFILE '/tmp/agr_users.csv'
+FIELDS TERMINATED BY ',' ENCLOSED BY '"'
+LINES TERMINATED BY '\n';
+```
+
+### SAP Data Mapping to Graph Nodes
+
+| SAP Source | Graph Node | Key Mapping |
+|------------|------------|-------------|
+| USR02 + ADRP | User | BNAME → userId |
+| AGR_DEFINE (PARENT_AGR IS NULL) | BusinessRole | AGR_NAME → roleId |
+| AGR_DEFINE (PARENT_AGR IS NOT NULL) | FunctionalRole | AGR_NAME → roleId |
+| AGR_USERS | HAS_BUSINESS_ROLE relationship | AGR_NAME + UNAME |
+| TSTC + TSTCT | Transaction | TCODE → tcode |
+| TOBJ + TOBJT | AuthObject | OBJCT → objectId |
+| AGR_1251 | GRANTS_AUTH relationship | AGR_NAME + OBJECT |
+| USOBT | REQUIRES_AUTH relationship | NAME + OBJECT |
+
+### Required SAP Authorizations for Extraction
+
+The RFC user needs the following authorizations:
+
+| Auth Object | Field | Value | Description |
+|-------------|-------|-------|-------------|
+| S_RFC | RFC_TYPE | FUGR | Function group access |
+| S_RFC | RFC_NAME | SYST, BAPI* | Required function modules |
+| S_TABU_DIS | DICBERCLS | SS, SC | Table access |
+| S_USER_GRP | CLASS | * | User group access |
+| S_USER_AGR | ACTVT | 03 | Display role assignments |
+
+### Data Refresh Frequency
+
+| Data Type | Recommended Frequency | Rationale |
+|-----------|----------------------|-----------|
+| User Master | Daily | User changes are frequent |
+| Role Definitions | Weekly | Roles change less frequently |
+| User-Role Assignments | Daily | Critical for SOD detection |
+| Transaction Codes | Monthly | Rarely change |
+| Usage Logs | Weekly | For trend analysis |
+
+---
+
 ## References
 
 - [Neo4j Documentation](https://neo4j.com/docs/)
