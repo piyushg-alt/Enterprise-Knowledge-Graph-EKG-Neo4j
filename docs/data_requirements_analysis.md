@@ -9,9 +9,8 @@
 2. [Data Sources Summary](#data-sources-summary)
 3. [Entra ID (Azure AD) Data Requirements](#entra-id-azure-ad-data-requirements)
 4. [SAP S4/HANA Data Requirements](#sap-s4hana-data-requirements)
-5. [SuccessFactors Data Requirements](#successfactors-data-requirements)
-6. [Data Analysis from V3 Excel](#data-analysis-from-v3-excel)
-7. [Data Mapping & Transformation](#data-mapping--transformation)
+5. [Data Analysis from V3 Excel](#data-analysis-from-v3-excel)
+6. [Data Mapping & Transformation](#data-mapping--transformation)
 
 ---
 
@@ -78,25 +77,7 @@ Based on the User Mapping sheet analysis, the following attributes are needed fr
 | `groupTypes` | Group.type | Security/M365 |
 | `members` | MEMBER_OF relationship | User membership |
 
-### Microsoft Graph API Queries
 
-```http
-# Get all users with required attributes
-GET https://graph.microsoft.com/v1.0/users
-    ?$select=id,userPrincipalName,givenName,surname,displayName,mail,
-             jobTitle,department,officeLocation,country,companyName,accountEnabled
-    &$expand=manager($select=id,displayName)
-    &$filter=accountEnabled eq true
-
-# Get all security groups
-GET https://graph.microsoft.com/v1.0/groups
-    ?$select=id,displayName,description,groupTypes,securityEnabled
-    &$filter=securityEnabled eq true
-
-# Get group members
-GET https://graph.microsoft.com/v1.0/groups/{group-id}/members
-    ?$select=id,userPrincipalName,displayName
-```
 
 ### Entra ID Export Format (Expected CSV)
 
@@ -188,24 +169,6 @@ abc123,jdevlin@company.com,Jillian,Devlin,Jillian Devlin,jdevlin@company.com,Sal
 
 ---
 
-## SuccessFactors Data Requirements
-
-### Required Employee Attributes
-
-Based on the User Mapping sheet:
-
-| SF Attribute | V3 Excel Column | Graph Property | Required |
-|--------------|-----------------|----------------|----------|
-| userId | userName | User.userId | Yes |
-| firstName | FirstName | User.firstName | Yes |
-| lastName | familyName | User.lastName | Yes |
-| department | Department | User.department | Yes |
-| division | Function | User.function | Yes |
-| location | City | User.city | Yes |
-| country | Country | User.country | Yes |
-| jobCode | Level | User.level | Yes |
-| managerId | - | User.managerId | Yes |
-| costCenter | - | User.costCenter | No |
 
 ### Function Mapping (from V3 Excel)
 
@@ -368,33 +331,5 @@ def get_module(role_id):
 
 ---
 
-## Summary of Required Data Exports
 
-### From Entra ID
-
-| Export | Format | Fields | Frequency |
-|--------|--------|--------|-----------|
-| Users | CSV/JSON | id, upn, name, department, country, manager | Daily |
-| Groups | CSV/JSON | id, name, type, members | Weekly |
-| Group Memberships | CSV/JSON | userId, groupId | Daily |
-
-### From SAP S4/HANA
-
-| Export | Format | Source Table | Frequency |
-|--------|--------|--------------|-----------|
-| Users | CSV | USR02 + ADRP | Daily |
-| Roles | CSV | AGR_DEFINE | Weekly |
-| Role Assignments | CSV | AGR_USERS | Daily |
-| Role Authorizations | CSV | AGR_1251 | Weekly |
-| Transactions | CSV | TSTC + TSTCT | Monthly |
-
-### From SuccessFactors
-
-| Export | Format | API Endpoint | Frequency |
-|--------|--------|--------------|-----------|
-| Employees | CSV/JSON | /odata/v2/User | Daily |
-| Org Structure | CSV/JSON | /odata/v2/Position | Weekly |
-| Job Catalog | CSV/JSON | /odata/v2/JobCode | Monthly |
-
----
 
