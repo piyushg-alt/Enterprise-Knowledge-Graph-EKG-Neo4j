@@ -398,10 +398,3 @@ def get_module(role_id):
 
 ---
 
-## Next Steps
-
-1. **Set up data connectors** for each source system
-2. **Create ETL pipelines** for data transformation
-3. **Load data into Neo4j** using the defined schema
-4. **Validate data quality** and relationships
-5. **Run SOD detection queries** to verify implementation
