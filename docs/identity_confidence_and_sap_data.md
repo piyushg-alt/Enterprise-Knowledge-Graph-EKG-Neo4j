@@ -9,10 +9,6 @@
 2. [Identity Confidence Percentage](#identity-confidence-percentage)
 3. [Scoring Criteria & Weights](#scoring-criteria--weights)
 4. [Cypher Queries for Confidence Calculation](#cypher-queries-for-confidence-calculation)
-5. [Predictive Role Recommendations](#predictive-role-recommendations)
-6. [SAP Data Points Required](#sap-data-points-required)
-7. [Data Extraction Methods](#data-extraction-methods)
-8. [Data Mapping to Graph Nodes](#data-mapping-to-graph-nodes)
 
 ---
 
@@ -20,14 +16,7 @@
 
 This document defines the methodology for calculating **Identity Confidence Percentage** - a score that determines how likely a user should have a specific role or access based on their identity attributes, organizational context, and peer analysis. It also documents all **SAP data points** required to build the knowledge graph.
 
-### Key Objectives
 
-1. **Predictive Access**: Recommend appropriate roles based on user attributes
-2. **Anomaly Detection**: Identify users with roles that don't match their profile
-3. **Auto-Approval**: Enable automatic approval for high-confidence role assignments
-4. **Risk Scoring**: Calculate risk scores for access requests
-
----
 
 ## Identity Confidence Percentage
 
@@ -58,10 +47,10 @@ Identity Confidence % = Σ (Criterion Weight × Criterion Score) / Total Weight 
 
 | # | Criterion | Weight | Description | Data Source |
 |---|-----------|--------|-------------|-------------|
-| 1 | **Function Match** | 30% | User's function matches role's intended function | SuccessFactors, Entra ID |
-| 2 | **Country/Entity Match** | 20% | User's country matches role's country derivation | SuccessFactors, SAP |
-| 3 | **Org Level Match** | 15% | User's org level (L1-L4) matches role's typical level | SuccessFactors |
-| 4 | **Department Match** | 10% | User's department aligns with role's module | SuccessFactors, Entra ID |
+| 1 | **Function Match** | 30% | User's function matches role's intended function |  Entra ID |
+| 2 | **Country/Entity Match** | 20% | User's country matches role's country derivation |  SAP |
+| 3 | **Org Level Match** | 15% | User's org level (L1-L4) matches role's typical level | SAP |
+| 4 | **Department Match** | 10% | User's department aligns with role's module |  Entra ID |
 | 5 | **Peer Analysis** | 15% | % of peers with same function/level who have this role | Graph Analysis |
 | 6 | **Historical Usage** | 10% | User's actual usage of transactions in the role | SAP Usage Logs |
 
