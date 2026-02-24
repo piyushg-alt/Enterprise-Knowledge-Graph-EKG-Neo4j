@@ -81,15 +81,13 @@ All SAP users were successfully found in Entra!
 
 ## Methodology
 
-1. **Data Sources:**
-   - Entra Users: `entra_users_20260217_122150 (1).csv`
-   - SAP Users: `entra_users_20260217_122150.csv`
 
-2. **Matching Logic:**
+
+1. **Matching Logic:**
    - SAP `User Name` field matched against Entra `mailNickname` field
    - Case-insensitive matching applied
 
-3. **Analysis Performed:**
+2. **Analysis Performed:**
    - User presence reconciliation
    - Role assignment mapping
    - Gap identification
