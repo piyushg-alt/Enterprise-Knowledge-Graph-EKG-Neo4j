@@ -135,6 +135,36 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 // ORGANIZATIONAL NODES
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Country/Entity Node
+(:Country {
+    code: STRING,             // Entity code (1000, 2000, 3000, etc.)
+    isoCode: STRING,          // ISO code (UK, US, AE, DE, IN, etc.)
+    name: STRING,             // Full country name
+    region: STRING            // Geographic region
+})
+
+// Function Node
+(:Function {
+    code: STRING,             // Function code (FIN, S&D, DFE, P2P)
+    name: STRING,             // Full name
+    description: STRING       // Description
+})
+
+// Department Node
+(:Department {
+    code: STRING,             // Department code
+    name: STRING,             // Department name
+    functionCode: STRING      // Parent function
+})
+
+// Cost Center Node
+(:CostCenter {
+    code: STRING,             // Cost center code
+    name: STRING,             // Cost center name
+    countryCode: STRING,      // Associated country
+    functionCode: STRING      // Associated function
+})
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ROLE HIERARCHY NODES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -174,22 +204,87 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 // SAP AUTHORIZATION NODES
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Transaction Code
+(:Transaction {
+    tcode: STRING,            // e.g., "ME21N", "MIGO", "MIRO"
+    name: STRING,             // Transaction name
+    description: STRING,      // Full description
+    module: STRING,           // SAP module (MM, FI, SD)
+    type: STRING,             // Tcode, Fiori, WF (Workflow)
+    accessType: STRING,       // Display, Maintain, Create
+    isCritical: BOOLEAN,      // Critical transaction flag
+    system: STRING            // S4, ECC, etc.
+})
+
+// Authorization Object
+(:AuthObject {
+    objectId: STRING,         // e.g., "M_BEST_EKG", "M_EINK_FRG"
+    name: STRING,             // Object name
+    description: STRING,      // Description
+    objectClass: STRING       // Authorization class
+})
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PROCESS HIERARCHY NODES
 // ═══════════════════════════════════════════════════════════════════════════
 
 // L1 Process - Top level process
+(:L1Process {
+    processId: STRING,        // e.g., "P2P"
+    name: STRING,             // e.g., "Purchase to Pay"
+    description: STRING,      // Process description
+    owner: STRING             // Process owner userId
+})
 
 // L2 Process - Sub-process
+(:L2Process {
+    processId: STRING,        // e.g., "P2P_PO_CREATE_RELEASE"
+    name: STRING,             // e.g., "Purchase Order Creation and Release"
+    description: STRING,      // Description
+    parentProcessId: STRING   // L1 Process reference
+})
 
+// L3 Functionality - Specific function/activity
+(:L3Functionality {
+    functionalityId: STRING,  // e.g., "P2P_PO_CREATE"
+    name: STRING,             // e.g., "Purchase Order Creation"
+    description: STRING,      // Description
+    parentProcessId: STRING   // L2 Process reference
+})
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SOD & COMPLIANCE NODES
 // ═══════════════════════════════════════════════════════════════════════════
+
+// SOD Rule Definition
+(:SODRule {
+    ruleId: STRING,           // e.g., "SOD_0001"
+    name: STRING,             // Rule name
+    description: STRING,      // Rule description
+    riskLevel: STRING,        // HIGH, MEDIUM, LOW
+    conflictType: STRING,     // e.g., "Create vs Approve"
+    status: STRING            // ACTIVE, INACTIVE
 })
 
 // SOD Conflict (Detected Violation)
+(:SODConflict {
+    conflictId: STRING,       // Unique conflict identifier
+    ruleId: STRING,           // Reference to SOD rule
+    userId: STRING,           // User with conflict
+    detectedDate: DATETIME,   // When detected
+    status: STRING,           // OPEN, MITIGATED, ACCEPTED, REMEDIATED
+    riskScore: FLOAT,         // Calculated risk score
+    mitigatingControl: STRING // Any compensating control
+})
 
+// Persona (Role-based access pattern)
+(:Persona {
+    personaId: STRING,        // e.g., "PROCUREMENT_AGENT"
+    name: STRING,             // e.g., "Procurement Agent"
+    description: STRING,      // Description
+    department: STRING,       // Associated department
+    typicalLevel: STRING      // Typical org level
+})
 ```
 
 ### Relationships
@@ -199,30 +294,173 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 // USER RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// User organizational relationships
+(:User)-[:WORKS_IN]->(:Country)
+(:User)-[:BELONGS_TO_FUNCTION]->(:Function)
+(:User)-[:BELONGS_TO_DEPARTMENT]->(:Department)
+(:User)-[:ASSIGNED_TO_COST_CENTER]->(:CostCenter)
+(:User)-[:REPORTS_TO]->(:User)  // Manager relationship
+
+// User role assignments
+(:User)-[:HAS_BUSINESS_ROLE {
+    assignedDate: DATETIME,
+    assignedBy: STRING,
+    validFrom: DATE,
+    validTo: DATE,
+    status: STRING
+}]->(:BusinessRole)
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ROLE HIERARCHY RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
+
+// Business role contains functional/derived roles
+(:BusinessRole)-[:CONTAINS_ROLE]->(:FunctionalRole)
+(:BusinessRole)-[:CONTAINS_ROLE]->(:DerivedRole)
+
+// Derived role is derived from master functional role
+(:DerivedRole)-[:DERIVED_FROM]->(:FunctionalRole)
+
+// Role country association
+(:BusinessRole)-[:VALID_FOR_COUNTRY]->(:Country)
+(:DerivedRole)-[:VALID_FOR_COUNTRY]->(:Country)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUTHORIZATION RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Functional role grants access to transactions
+(:FunctionalRole)-[:GRANTS_ACCESS_TO {
+    accessType: STRING,  // Display, Maintain, Create
+    isCritical: BOOLEAN
+}]->(:Transaction)
+
+// Transaction requires authorization objects
+(:Transaction)-[:REQUIRES_AUTH]->(:AuthObject)
+
+// Role grants authorization
+(:FunctionalRole)-[:GRANTS_AUTH {
+    fieldValues: MAP  // Specific field values granted
+}]->(:AuthObject)
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PROCESS RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
+
+// Process hierarchy
+(:L1Process)-[:HAS_SUBPROCESS]->(:L2Process)
+(:L2Process)-[:HAS_FUNCTIONALITY]->(:L3Functionality)
+
+// Functionality performed by persona
+(:L3Functionality)-[:PERFORMED_BY]->(:Persona)
+
+// Persona supported by role
+(:Persona)-[:SUPPORTED_BY_ROLE]->(:FunctionalRole)
+
+// Transaction belongs to functionality
+(:Transaction)-[:BELONGS_TO_FUNCTIONALITY]->(:L3Functionality)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SOD RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// SOD rule involves functionalities
+(:SODRule)-[:INVOLVES_FUNCTIONALITY {
+    side: STRING  // "SIDE_A" or "SIDE_B"
+}]->(:L3Functionality)
+
+// SOD rule defines conflicting roles
+(:SODRule)-[:DEFINES_CONFLICT_BETWEEN {
+    side: STRING
+}]->(:FunctionalRole)
+
+// Roles conflict with each other
+(:FunctionalRole)-[:CONFLICTS_WITH {
+    ruleId: STRING,
+    riskLevel: STRING,
+    conflictType: STRING
+}]->(:FunctionalRole)
+
+// SOD conflict detected for user
+(:SODConflict)-[:DETECTED_FOR]->(:User)
+(:SODConflict)-[:VIOLATES_RULE]->(:SODRule)
+(:SODConflict)-[:INVOLVES_ROLE]->(:FunctionalRole)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // OWNERSHIP RELATIONSHIPS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Process ownership
+(:User)-[:OWNS_PROCESS]->(:L1Process)
+(:User)-[:OWNS_PROCESS]->(:L2Process)
+
+// Role ownership
+(:User)-[:OWNS_ROLE]->(:BusinessRole)
+(:User)-[:OWNS_ROLE]->(:FunctionalRole)
+
+// Data/Application ownership
+(:User)-[:IS_DATA_OWNER_FOR]->(:Transaction)
+(:User)-[:IS_APP_OWNER_FOR]->(:Transaction)
 ```
 
 ### Visual Graph Model
+
+```
+                                    ┌─────────────┐
+                                    │   Country   │
+                                    │  (Entity)   │
+                                    └──────┬──────┘
+                                           │
+                    ┌──────────────────────┼──────────────────────┐
+                    │                      │                      │
+                    ▼                      ▼                      ▼
+            ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
+            │   Function    │      │  Cost Center  │      │  Department   │
+            └───────┬───────┘      └───────────────┘      └───────────────┘
+                    │                      │                      │
+                    └──────────────────────┼──────────────────────┘
+                                           │
+                                           ▼
+                                    ┌─────────────┐
+                                    │    User     │◄────────────────────┐
+                                    └──────┬──────┘                     │
+                                           │                            │
+                         ┌─────────────────┼─────────────────┐   REPORTS_TO
+                         │                 │                 │          │
+                         ▼                 ▼                 ▼          │
+                 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐  │
+                 │ BusinessRole  │ │ BusinessRole  │ │ BusinessRole  │──┘
+                 │ (Finance Mgr) │ │ (PO Creator)  │ │ (GR Processor)│
+                 └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+                         │                 │                 │
+              ┌──────────┴──────────┐      │                 │
+              ▼                     ▼      ▼                 ▼
+      ┌───────────────┐     ┌───────────────┐       ┌───────────────┐
+      │ DerivedRole   │     │ DerivedRole   │       │ DerivedRole   │
+      │ (FI Display)  │     │ (PO Creator)  │       │ (GR Processor)│
+      └───────┬───────┘     └───────┬───────┘       └───────┬───────┘
+              │                     │                       │
+              │    DERIVED_FROM     │                       │
+              ▼                     ▼                       ▼
+      ┌───────────────┐     ┌───────────────┐       ┌───────────────┐
+      │FunctionalRole │     │FunctionalRole │       │FunctionalRole │
+      │ (FI Display)  │     │ (PO Creator)  │◄─────►│ (GR Processor)│
+      └───────┬───────┘     └───────┬───────┘       └───────┬───────┘
+              │                     │  CONFLICTS_WITH       │
+              │                     │                       │
+              ▼                     ▼                       ▼
+      ┌───────────────┐     ┌───────────────┐       ┌───────────────┐
+      │  Transaction  │     │  Transaction  │       │  Transaction  │
+      │   (FK10N)     │     │   (ME21N)     │       │   (MIGO)      │
+      └───────┬───────┘     └───────┬───────┘       └───────┬───────┘
+              │                     │                       │
+              ▼                     ▼                       ▼
+      ┌───────────────┐     ┌───────────────┐       ┌───────────────┐
+      │  AuthObject   │     │  AuthObject   │       │  AuthObject   │
+      │ (F_BKPF_BUK)  │     │ (M_BEST_EKG)  │       │ (M_MSEG_BWE)  │
+      └───────────────┘     └───────────────┘       └───────────────┘
+```
+
 ---
 
 ## SOD Rules & Conflict Detection
@@ -242,47 +480,43 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 
 ```cypher
 // ═══════════════════════════════════════════════════════════════════════════
-// Cypher QUERY 1: Find all users with SOD violations
+// QUERY 1: Find all users with SOD violations
 // ═══════════════════════════════════════════════════════════════════════════
+MATCH (u:User)-[:HAS_BUSINESS_ROLE]->(br:BusinessRole)-[:CONTAINS_ROLE]->(fr1:FunctionalRole)
+MATCH (u)-[:HAS_BUSINESS_ROLE]->(br2:BusinessRole)-[:CONTAINS_ROLE]->(fr2:FunctionalRole)
+MATCH (fr1)-[c:CONFLICTS_WITH]->(fr2)
+WHERE fr1 <> fr2
+RETURN u.userId AS User, 
+       u.firstName + ' ' + u.lastName AS Name,
+       fr1.name AS Role1, 
+       fr2.name AS Role2, 
+       c.ruleId AS RuleViolated,
+       c.riskLevel AS RiskLevel
 
 // ═══════════════════════════════════════════════════════════════════════════
 // QUERY 2: Find PO Creator + PO Approver conflicts (SOD_0001)
 // ═══════════════════════════════════════════════════════════════════════════
+MATCH (u:User)-[:HAS_BUSINESS_ROLE]->(br1:BusinessRole)-[:CONTAINS_ROLE]->(fr1:FunctionalRole)
+      -[:GRANTS_ACCESS_TO]->(t1:Transaction {tcode: 'ME21N'})
+MATCH (u)-[:HAS_BUSINESS_ROLE]->(br2:BusinessRole)-[:CONTAINS_ROLE]->(fr2:FunctionalRole)
+      -[:GRANTS_ACCESS_TO]->(t2:Transaction {tcode: 'ME28'})
+RETURN u.userId AS User,
+       u.country AS Country,
+       br1.name AS CreatorRole,
+       br2.name AS ApproverRole,
+       'SOD_0001: PO Create vs Approve' AS Violation
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Cypher QUERY 3: Find users with critical transaction access
+// QUERY 3: Find users with critical transaction access
 // ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Cypher QUERY 4: Detect anomalies - Users with roles outside their function
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Cypher QUERY 5: Find users with roles in wrong country
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Cypher QUERY 6: Risk scoring - Users with multiple high-risk combinations
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-//Cypher QUERY 7: Orphaned roles - Roles not assigned to any user
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Cypher QUERY 8: Users with excessive role assignments - Cypher Query
-
----
-
-## Use Cases
-
-###  Core SOD Detection 
-
-### Phase 2: Advanced Analyticsv-If required 
-
-### Phase 3: Predictive & Auto-Remediation
-
-
-### Persona-Based Use Cases
+MATCH (u:User)-[:HAS_BUSINESS_ROLE]->(br:BusinessRole)-[:CONTAINS_ROLE]->(fr:FunctionalRole)
+      -[:GRANTS_ACCESS_TO]->(t:Transaction {isCritical: true})
+RETURN u.userId AS User,
+       u.function AS Function,
+       u.country AS Country,
+       collect(DISTINCT t.tcode) AS CriticalTransactions,
+       count(DISTINCT t) AS CriticalCount
+ORDER BY CriticalCount DESC
 
 
 
