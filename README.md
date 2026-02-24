@@ -224,67 +224,8 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
     objectClass: STRING       // Authorization class
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PROCESS HIERARCHY NODES
-// ═══════════════════════════════════════════════════════════════════════════
 
-// L1 Process - Top level process
-(:L1Process {
-    processId: STRING,        // e.g., "P2P"
-    name: STRING,             // e.g., "Purchase to Pay"
-    description: STRING,      // Process description
-    owner: STRING             // Process owner userId
-})
 
-// L2 Process - Sub-process
-(:L2Process {
-    processId: STRING,        // e.g., "P2P_PO_CREATE_RELEASE"
-    name: STRING,             // e.g., "Purchase Order Creation and Release"
-    description: STRING,      // Description
-    parentProcessId: STRING   // L1 Process reference
-})
-
-// L3 Functionality - Specific function/activity
-(:L3Functionality {
-    functionalityId: STRING,  // e.g., "P2P_PO_CREATE"
-    name: STRING,             // e.g., "Purchase Order Creation"
-    description: STRING,      // Description
-    parentProcessId: STRING   // L2 Process reference
-})
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SOD & COMPLIANCE NODES
-// ═══════════════════════════════════════════════════════════════════════════
-
-// SOD Rule Definition
-(:SODRule {
-    ruleId: STRING,           // e.g., "SOD_0001"
-    name: STRING,             // Rule name
-    description: STRING,      // Rule description
-    riskLevel: STRING,        // HIGH, MEDIUM, LOW
-    conflictType: STRING,     // e.g., "Create vs Approve"
-    status: STRING            // ACTIVE, INACTIVE
-})
-
-// SOD Conflict (Detected Violation)
-(:SODConflict {
-    conflictId: STRING,       // Unique conflict identifier
-    ruleId: STRING,           // Reference to SOD rule
-    userId: STRING,           // User with conflict
-    detectedDate: DATETIME,   // When detected
-    status: STRING,           // OPEN, MITIGATED, ACCEPTED, REMEDIATED
-    riskScore: FLOAT,         // Calculated risk score
-    mitigatingControl: STRING // Any compensating control
-})
-
-// Persona (Role-based access pattern)
-(:Persona {
-    personaId: STRING,        // e.g., "PROCUREMENT_AGENT"
-    name: STRING,             // e.g., "Procurement Agent"
-    description: STRING,      // Description
-    department: STRING,       // Associated department
-    typicalLevel: STRING      // Typical org level
-})
 ```
 
 ### Relationships
