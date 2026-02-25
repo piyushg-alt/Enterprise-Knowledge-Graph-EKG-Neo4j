@@ -11,19 +11,10 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 ## Business Context
 
 ### Organization Profile (Reference Model)
-- **Company**:  Organization
-- **Size**: 1,000 employees and third parties
-- **Industry**: Manufacturing (glass, metal, packaging for CPG)
+- **Company**:  PAX
+- **Size**: 1,144 employees and third parties
 - **Geographic Presence**: 11 countries (UK, US, UAE, Germany, India, Russia, China, Australia, Singapore, South Africa, Kazakhstan)
 - **Key Functions**: Finance, Sales & Marketing, Manufacturing/DFE, Procurement & Supply Chain
-
-### Functional Streams
-| Stream | Code | Description |
-|--------|------|-------------|
-| Finance | FIN | Financial operations, AP/AR, Budget |
-| Sales & Distribution | S&D | Sales order management |
-| DFE (Plants) | DFE | Warehouse and plant operations |
-| Procure to Pay | P2P | Purchase orders, goods receipt, invoicing |
 
 ---
 
@@ -51,8 +42,8 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           FOUNDATIONAL LAYER                                 │
 ├─────────────────┬─────────────────┬─────────────────┬───────────────────────┤
-│  SuccessFactors │   Entra ID      │   Active        │                       │
-│  (HR Data)      │   (Azure AD)    │   Directory     │   (Process Inventory) │
+│                 │   Entra ID      │   SAP           │                       │
+│                 │   (Azure AD)    │                 │   (SOD Repository)    │
 └────────┬────────┴────────┬────────┴────────┬────────┴───────────┬───────────┘
          │                 │                 │                     │
          └─────────────────┴─────────────────┴─────────────────────┘
@@ -67,8 +58,7 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 │  │  Processes  │──│  Functions  │──│  Countries  │──│   SOD Rules         │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+                                    
 
 ```
 
@@ -91,17 +81,13 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 | AccountEnabled | Active/Inactive status | Access validation |
 ---
 
-### 2. SAP S4/HANA
+### 2. SAP 
 **Purpose**: System of record for business transactions and authorizations
 
 | Data Type | Tables/Sources | Description |
 |-----------|----------------|-------------|
-| Users | USR02, USR21 | SAP user master data |
-| Roles | AGR_DEFINE, AGR_1251 | Role definitions |
-| Role Assignments | AGR_USERS | User-role mappings |
-| Transactions | TSTC, TSTCT | Transaction codes |
-| Auth Objects | USOBT, USOBX | Authorization objects |
-| Composite Roles | AGR_AGRS | Role hierarchies |
+| Users     | SAP            | SAP user master data |
+
 
 ---
 
@@ -157,13 +143,6 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
     functionCode: STRING      // Parent function
 })
 
-// Cost Center Node
-(:CostCenter {
-    code: STRING,             // Cost center code
-    name: STRING,             // Cost center name
-    countryCode: STRING,      // Associated country
-    functionCode: STRING      // Associated function
-})
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ROLE HIERARCHY NODES
@@ -223,7 +202,6 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
     description: STRING,      // Description
     objectClass: STRING       // Authorization class
 })
-
 
 
 ```
@@ -301,47 +279,8 @@ This project implements a Neo4j-based Knowledge Graph solution for detecting Seg
 // Transaction belongs to functionality
 (:Transaction)-[:BELONGS_TO_FUNCTIONALITY]->(:L3Functionality)
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SOD RELATIONSHIPS
-// ═══════════════════════════════════════════════════════════════════════════
 
-// SOD rule involves functionalities
-(:SODRule)-[:INVOLVES_FUNCTIONALITY {
-    side: STRING  // "SIDE_A" or "SIDE_B"
-}]->(:L3Functionality)
 
-// SOD rule defines conflicting roles
-(:SODRule)-[:DEFINES_CONFLICT_BETWEEN {
-    side: STRING
-}]->(:FunctionalRole)
-
-// Roles conflict with each other
-(:FunctionalRole)-[:CONFLICTS_WITH {
-    ruleId: STRING,
-    riskLevel: STRING,
-    conflictType: STRING
-}]->(:FunctionalRole)
-
-// SOD conflict detected for user
-(:SODConflict)-[:DETECTED_FOR]->(:User)
-(:SODConflict)-[:VIOLATES_RULE]->(:SODRule)
-(:SODConflict)-[:INVOLVES_ROLE]->(:FunctionalRole)
-
-// ═══════════════════════════════════════════════════════════════════════════
-// OWNERSHIP RELATIONSHIPS
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Process ownership
-(:User)-[:OWNS_PROCESS]->(:L1Process)
-(:User)-[:OWNS_PROCESS]->(:L2Process)
-
-// Role ownership
-(:User)-[:OWNS_ROLE]->(:BusinessRole)
-(:User)-[:OWNS_ROLE]->(:FunctionalRole)
-
-// Data/Application ownership
-(:User)-[:IS_DATA_OWNER_FOR]->(:Transaction)
-(:User)-[:IS_APP_OWNER_FOR]->(:Transaction)
 ```
 
 ### Visual Graph Model
